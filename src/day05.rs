@@ -1,12 +1,17 @@
 // Copyright (c) 2022 Bastiaan Marinus van de Weerd
 
+//! NOTE: The “Intcode computer” of this module is also used in `day07`; for that reason:
+//! - various items are `pub(crate)`;
+//! - various items implement `Clone`;
+//! - `Program` was refactored into to expose the `safe_output` method.
+
 
 #[derive(Clone, Copy)]
 #[cfg_attr(test, derive(Debug))]
-enum ParMode { Pos, Imm }
+pub(crate) enum ParMode { Pos, Imm }
 
 #[derive(Debug)]
-enum ArgPos { First, Second }
+pub(crate) enum ArgPos { First, Second }
 
 impl<T> std::ops::Index<ArgPos> for [T] {
 	type Output = T;
@@ -17,7 +22,7 @@ impl<T> std::ops::Index<ArgPos> for [T] {
 
 #[derive(Clone, Copy)]
 #[cfg_attr(test, derive(Debug))]
-enum Op {
+pub(crate) enum Op {
 	Add([ParMode; 2]),
 	Mul([ParMode; 2]),
 	In,
@@ -28,8 +33,9 @@ enum Op {
 	Halt,
 }
 
+#[derive(Clone)]
 #[cfg_attr(test, derive(Debug))]
-enum Int<'a> {
+pub(crate) enum Int<'a> {
 	Op(Op),
 	Num(i64),
 	Raw { _column: usize, str: &'a str }
@@ -111,72 +117,81 @@ impl Int<'_> {
 	}
 }
 
-trait Program<'a>: AsMut<[Int<'a>]> {
-	// TODO(bm-w): Return `impl Iterator<…>` once Rust allows it from trait methods
-	fn execute<'b, In>(&'b mut self, mut input: In) -> Box<dyn Iterator<Item = i64> + 'b>
+pub(crate) trait Program<'a>: AsMut<[Int<'a>]> + Clone {
+
+	fn safe_output<'b, In>(&'b mut self, offset: &mut usize, mut input: In) -> Result<Option<i64>, String>
 	where 'a: 'b, In: Iterator<Item = i64> + 'b {
-		let memory = self.as_mut();
-		let mut offset = 0;
-		Box::new(std::iter::from_fn(move || {
-			loop {
-				if offset >= memory.len() { break }
-				macro_rules! parse_pos {
-					( $pos:expr ) => {
-						memory[$pos].parse_into_pos().unwrap_or_else(|e|
-							panic!("Invalid position argument at position {}; source: {e:?}", $pos))
-					}
+		loop {
+			use {ArgPos::*, Op::*};
+
+			let memory = self.as_mut();
+			let eop_err = || Err("Unexpected end of program".to_string());
+			if *offset >= memory.len() { return eop_err() }
+
+			macro_rules! parse_pos {
+				( $pos:expr ) => {
+					memory[$pos].parse_into_pos().map_err(|e|
+						format!("Invalid position argument at position {}; source: {e:?}", $pos))?
 				}
-				macro_rules! parse_memory {
-					( $pos:expr, $par_mode:expr, $parse:ident) => { {
-						use ParMode::*;
-						let pos = match $par_mode { Pos => parse_pos!($pos), Imm => $pos };
-						memory[pos].$parse().unwrap_or_else(|e|
-							panic!("Invalid immediate argument at position {}: {e:?}", $pos))
-					} }
+			}
+			macro_rules! parse_memory {
+				( $pos:expr, $par_mode:expr, $parse:ident) => { {
+					use ParMode::*;
+					let pos = match $par_mode { Pos => parse_pos!($pos), Imm => $pos };
+					memory[pos].$parse().map_err(|e|
+						format!("Invalid immediate argument at position {}: {e:?}", $pos))?
+				} }
+			}
+			macro_rules! parse_memory_num { ( $pos:expr, $par_mode:expr) => { parse_memory!($pos, $par_mode, parse_into_num) } }
+
+			match memory[*offset].parse_into_op().map_err(|e|
+					format!("Unexpected non-op instruction at position {offset}: {e:?}"))? {
+				Halt => return Ok(None),
+				op @ (Add(_) | Mul(_) | Lt(_) | Eq(_)) => {
+					if *offset + 3 >= memory.len() { return eop_err() }
+					let args = {
+						let (Add(pm) | Mul(pm) | Lt(pm) | Eq(pm)) = op else { unreachable!() };
+						[parse_memory_num!(*offset + 1, pm[First]), parse_memory_num!(*offset + 2, pm[Second])]
+					};
+					memory[parse_pos!(*offset + 3)] = Int::Num(match op {
+						Add(_) => args[First] + args[Second],
+						Mul(_) => args[First] * args[Second],
+						Lt(_) => i64::from(args[First] < args[Second]),
+						Eq(_) => i64::from(args[First] == args[Second]),
+						_ => unreachable!(),
+					});
+					*offset += 4;
 				}
-				macro_rules! parse_memory_num { ( $pos:expr, $par_mode:expr) => { parse_memory!($pos, $par_mode, parse_into_num) } }
-				use {ArgPos::*, Op::*};
-				match memory[offset].parse_into_op().unwrap_or_else(|e|
-						panic!("Unexpected non-op instruction at position {offset}: {e:?}")) {
-					Halt => return None,
-					op @ (Add(_) | Mul(_) | Lt(_) | Eq(_)) => {
-						if offset + 3 >= memory.len() { break }
-						let args = {
-							let (Add(pm) | Mul(pm) | Lt(pm) | Eq(pm)) = op else { unreachable!() };
-							[parse_memory_num!(offset + 1, pm[First]), parse_memory_num!(offset + 2, pm[Second])]
-						};
-						memory[parse_pos!(offset + 3)] = Int::Num(match op {
-							Add(_) => args[First] + args[Second],
-							Mul(_) => args[First] * args[Second],
-							Lt(_) => i64::from(args[First] < args[Second]),
-							Eq(_) => i64::from(args[First] == args[Second]),
-							_ => unreachable!(),
-						});
-						offset += 4;
-					}
-					In => {
-						if offset + 1 >= memory.len() { break }
-						let dest = parse_pos!(offset + 1);
-						memory[dest] = Int::Num(input.next().expect("Unexpected end of input"));
-						offset += 2;
-					}
-					Out(par_mode) => {
-						if offset + 1 >= memory.len() { break }
-						let output = parse_memory_num!(offset + 1, par_mode);
-						offset += 2;
-						return Some(output)
-					}
-					JumpIf(flag, par_mode) => {
-						if offset + 2 >= memory.len() { break }
-						if (parse_memory_num!(offset + 1, par_mode[First]) != 0) == flag {
-							offset = parse_memory!(offset + 2, par_mode[Second], parse_into_pos);
-						} else {
-							offset += 3;
-						}
+				In => {
+					if *offset + 1 >= memory.len() { return eop_err() }
+					let dest = parse_pos!(*offset + 1);
+					memory[dest] = Int::Num(input.next().ok_or_else(|| "Unexpected end of input".to_string())?);
+					*offset += 2;
+				}
+				Out(par_mode) => {
+					if *offset + 1 >= memory.len() { return eop_err() }
+					let output = parse_memory_num!(*offset + 1, par_mode);
+					*offset += 2;
+					return Ok(Some(output))
+				}
+				JumpIf(flag, par_mode) => {
+					if *offset + 2 >= memory.len() { return eop_err() }
+					if (parse_memory_num!(*offset + 1, par_mode[First]) != 0) == flag {
+						*offset = parse_memory!(*offset + 2, par_mode[Second], parse_into_pos);
+					} else {
+						*offset += 3;
 					}
 				}
 			}
-			panic!("Unexpected end of program")
+		}
+	}
+
+	// TODO(bm-w): Return `impl Iterator<…>` once Rust allows it from trait methods
+	fn execute<'b, In>(&'b mut self, mut input: In) -> Box<dyn Iterator<Item = i64> + 'b>
+	where 'a: 'b, In: Iterator<Item = i64> + 'b {
+		let mut offset = 0usize;
+		Box::new(std::iter::from_fn(move || {
+			self.safe_output(&mut offset, &mut input).unwrap()
 		}))
 	}
 }
@@ -206,12 +221,12 @@ pub(crate) fn part2() -> i64 {
 }
 
 
-mod parsing {
+pub(crate) mod parsing {
 	use super::{ParMode, ArgPos, Op, Int, Program};
 	use std::{mem, str::FromStr};
 
 	#[derive(Debug)]
-	pub(super) struct ParModeError(u8);
+	pub(crate) struct ParModeError(u8);
 
 	impl TryFrom<u8> for ParMode {
 		type Error = ParModeError;
@@ -226,7 +241,7 @@ mod parsing {
 	}
 
 	#[derive(Debug)]
-	pub(super) enum OpError {
+	pub(crate) enum OpError {
 		Format,
 		Op(u8, Option<u8>),
 		ParMode(Option<ParModeError>, ArgPos),
@@ -280,7 +295,7 @@ mod parsing {
 
 	impl<'a> Program<'a> for Vec<Int<'a>> {}
 
-	pub(super) fn from_str<'a>(s: &'a str) -> impl Program<'a> {
+	pub(crate) fn from_str<'a>(s: &'a str) -> impl Program<'a> {
 		use itertools::Itertools;
 		s.lines()
 			.enumerate()
