@@ -44,13 +44,14 @@ fn part2_impl<'a>(input_program: impl day05::Program<'a>, phase_settings: Option
 
 	'phase_settings: for phase_settings in phase_settings {
 		let mut offsets = [0; 5];
+		let mut rel_base = 0; // NOTE: Added for `day09`, but not actually used/modified here
 		let mut phase_settings_ = phase_settings.into_iter().map(Some).collect::<Vec<_>>();
 		let mut input = Some(0);
 		let mut final_output = None;
 		'feedback: loop {
 			for ((program, offset), phase_setting)
 					in input_programs.iter_mut().zip(offsets.iter_mut()).zip(phase_settings_.iter_mut()) {
-				match program.safe_output(offset,
+				match program.safe_output(offset, &mut rel_base, None,
 						&mut phase_setting.take().into_iter().chain(input.into_iter())) {
 					Ok(None) => break 'feedback,
 					Ok(Some(output)) => input = Some(output),

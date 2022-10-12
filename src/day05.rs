@@ -1,198 +1,343 @@
 // Copyright (c) 2022 Bastiaan Marinus van de Weerd
 
-//! NOTE: The “Intcode computer” of this module is also used in `day07`; for that reason:
+//! NOTE: The “Intcode computer” of this module is also used in `day07`
+//! and `day09`; for that reason:
 //! - various items are `pub(crate)`;
 //! - various items implement `Clone`;
-//! - `Program` was refactored into to expose the `safe_output` method.
+//! - `Program` was refactored into to expose the `safe_output` method;
+//! - relative (`Rel`) parameter mode;
+//! - extended memory beyond the base program;
+//! - generic `Num` support.
+
+use std::fmt::Debug;
 
 
 #[derive(Clone, Copy)]
 #[cfg_attr(test, derive(Debug))]
-pub(crate) enum ParMode { Pos, Imm }
+pub(crate) enum ParMode { Pos, Imm, Rel }
 
-#[derive(Debug)]
-pub(crate) enum ArgPos { First, Second }
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ArgPos { First, Second, Third }
 
 impl<T> std::ops::Index<ArgPos> for [T] {
 	type Output = T;
 	fn index(&self, index: ArgPos) -> &Self::Output {
-		match index { ArgPos::First => &self[0], ArgPos::Second => &self[1], }
+		match index {
+			ArgPos::First => &self[0],
+			ArgPos::Second => &self[1],
+			ArgPos::Third => &self[2],
+		}
 	}
 }
+
+type IsRelParMode = bool;
 
 #[derive(Clone, Copy)]
 #[cfg_attr(test, derive(Debug))]
 pub(crate) enum Op {
-	Add([ParMode; 2]),
-	Mul([ParMode; 2]),
-	In,
+	Add([ParMode; 2], IsRelParMode),
+	Mul([ParMode; 2], IsRelParMode),
+	In(IsRelParMode),
 	Out(ParMode),
 	JumpIf(bool, [ParMode; 2]),
-	Lt([ParMode; 2]),
-	Eq([ParMode; 2]),
+	Lt([ParMode; 2], IsRelParMode),
+	Eq([ParMode; 2], IsRelParMode),
+	RelAdj(ParMode),
 	Halt,
 }
 
+
 #[derive(Clone)]
 #[cfg_attr(test, derive(Debug))]
-pub(crate) enum Int<'a> {
+pub(crate) enum Int<'a,  Num = i64> {
 	Op(Op),
-	Num(i64),
-	Raw { _column: usize, str: &'a str }
+	Num(Num),
+	Raw { str: &'a str, _column: usize }
 }
 
-const PAR_MODE_COEFFS: [i64; 2] = [100, 1000];
+const PAR_MODE_COEFFS: [u16; 3] = [100, 1000, 10000];
 
 impl ParMode {
-	fn num(&self) -> i64 {
+	fn num(&self) -> u16 {
 		use ParMode::*;
-		match self { Pos => 0, Imm => 1 }
+		match self { Pos => 0, Imm => 1, Rel => 2 }
 	}
 
-	fn arg0_num(par_mode: &Self) -> i64 {
+	fn arg0_num(par_mode: &Self) -> u16 {
 		PAR_MODE_COEFFS[ArgPos::First] * par_mode.num()
 	}
 
-	fn args_num(par_modes: &[Self; 2]) -> i64 {
+	fn args_num(par_modes: &[Self; 2]) -> u16 {
 		Self::arg0_num(&par_modes[ArgPos::First])
 			+ PAR_MODE_COEFFS[ArgPos::Second] * par_modes[ArgPos::Second].num()
 	}
+
+	fn is_rel_par_mode_num(is_rel_par_mode: &bool, arg_pos: ArgPos) -> u16 {
+		if *is_rel_par_mode { PAR_MODE_COEFFS[arg_pos] * 2 } else { 0 }
+	}
 }
 
-impl Op {
-	fn num(&self) -> i64 {
-		match self {
-			Op::Add(par_modes) => 1 + ParMode::args_num(par_modes),
-			Op::Mul(par_modes) => 2 + ParMode::args_num(par_modes),
-			Op::In => 3,
+impl From<&Op> for u16 {
+	fn from(op: &Op) -> Self {
+		match op {
+			Op::Add(par_modes, is_rel_par_mode) => 1
+				+ ParMode::args_num(par_modes)
+				+ ParMode::is_rel_par_mode_num(is_rel_par_mode, ArgPos::Third),
+			Op::Mul(par_modes, is_rel_par_mode) => 2
+				+ ParMode::args_num(par_modes)
+				+ ParMode::is_rel_par_mode_num(is_rel_par_mode, ArgPos::Third),
+			Op::In(is_rel_par_mode) => 3
+				+ ParMode::is_rel_par_mode_num(is_rel_par_mode, ArgPos::Second),
 			Op::Out(par_mode) => 4 + ParMode::arg0_num(par_mode),
 			Op::JumpIf(true, par_modes) => 5 + ParMode::args_num(par_modes),
 			Op::JumpIf(false, par_modes) => 6 + ParMode::args_num(par_modes),
-			Op::Lt(par_modes) => 7 + ParMode::args_num(par_modes),
-			Op::Eq(par_modes) => 8 + ParMode::args_num(par_modes),
+			Op::Lt(par_modes, is_rel_par_mode) => 7
+				+ ParMode::args_num(par_modes)
+				+ ParMode::is_rel_par_mode_num(is_rel_par_mode, ArgPos::Third),
+			Op::Eq(par_modes, is_rel_par_mode) => 8
+				+ ParMode::args_num(par_modes)
+				+ ParMode::is_rel_par_mode_num(is_rel_par_mode, ArgPos::Third),
+			Op::RelAdj(par_mode) => 9 + ParMode::arg0_num(par_mode),
 			Op::Halt => 99,
 		}
 	}
 }
 
-impl Int<'_> {
-	fn parse_into_op(&mut self) -> Result<Op, parsing::OpError> {
-		macro_rules! parse_into_self {
-			( $s:expr ) => { {
-				use std::str::FromStr;
-				match Op::from_str($s) {
-					Ok(op) => {
-						*self = Int::Op(op);
-						let Int::Op(op) = self else { unreachable!() };
-						Ok(*op)
-					}
-					err => err,
-				}
-			} }
-		}
+pub(crate) trait IntNum: Clone + Default + FromStr + From<bool>
+	+ PartialEq<Self> + PartialOrd<Self>
+	+ Add<Self, Output = Self> + Mul<Self, Output = Self> {
+	type TryAsIsizeError;
+	fn from_op(_: Op) -> Self;
+	fn from_isize(_: isize) -> Self;
+	fn try_as_op(&self) -> Result<Op, parsing::OpError>;
+	fn try_as_isize(&self) -> Result<isize, Self::TryAsIsizeError>;
+}
+
+#[derive(Debug)]
+enum TryIntIntoIsizeError<FromNum> {
+	FromNum(FromNum),
+	FromRaw(<isize as FromStr>::Err),
+}
+
+impl<'n, Num> Int<'_, Num> where Num: IntNum + 'n {
+	fn try_into_op(&mut self) -> Result<Op, parsing::OpError> {
+		macro_rules! try_into_self { ( $res:expr ) => { {
+			let num = $res;
+			if let Ok(op) = num { *self = Int::Op(op); }
+			num
+		} } }
 		match self {
 			Int::Op(op) => Ok(*op),
-			Int::Num(num) => parse_into_self!(&num.to_string()),
-			Int::Raw { str, .. } => parse_into_self!(str),
+			Int::Num(num) => try_into_self!(num.try_as_op()),
+			Int::Raw { str, .. } => try_into_self!(Op::from_str(str)),
 		}
 	}
 
-	fn as_num(&self) -> Result<i64, std::num::ParseIntError> {
-		use std::str::FromStr;
-		match self {
-			Int::Op(op) => Ok(op.num()),
-			Int::Num(num) => Ok(*num),
-			Int::Raw { str, .. } => i64::from_str(str)
+	fn try_into_num(&mut self) -> Result<Num, <Num as FromStr>::Err> {
+		match &self {
+			Int::Op(op) => Ok(Num::from_op(*op)),
+			Int::Num(num) => Ok(num.clone()),
+			Int::Raw { str, .. } => {
+				let num = Num::from_str(str)?;
+				*self = Int::Num(num.clone());
+				Ok(num)
+			}
 		}
 	}
 
-	fn parse_into_num(&mut self) -> Result<i64, std::num::ParseIntError> {
-		let num = self.as_num()?;
-		*self = Int::Num(num);
-		Ok(num)
-	}
-
-	fn parse_into_pos(&mut self) -> Result<usize, std::num::ParseIntError> {
-		self.as_num().map(|num| num as usize)
+	fn try_into_isize(&mut self) -> Result<isize, TryIntIntoIsizeError<Num::TryAsIsizeError>> {
+		match &self {
+			Int::Op(op) => Ok(u16::from(op) as isize),
+			Int::Num(num) => num.try_as_isize().map_err(TryIntIntoIsizeError::FromNum),
+			Int::Raw { str, .. } => {
+				let isize_ = isize::from_str(str).map_err(TryIntIntoIsizeError::FromRaw)?;
+				*self = Int::Num(Num::from_isize(isize_));
+				Ok(isize_)
+			},
+		}
 	}
 }
 
-pub(crate) trait Program<'a>: AsMut<[Int<'a>]> + Clone {
+impl<Num> Default for Int<'_, Num> where Num: Default {
+	fn default() -> Self {
+		Int::Num(Num::default())
+	}
+}
 
-	fn safe_output<'b, In>(&'b mut self, offset: &mut usize, mut input: In) -> Result<Option<i64>, String>
-	where 'a: 'b, In: Iterator<Item = i64> + 'b {
-		loop {
-			use {ArgPos::*, Op::*};
+impl IntNum for i64 {
+	type TryAsIsizeError = <isize as TryFrom<Self>>::Error;
 
-			let memory = self.as_mut();
-			let eop_err = || Err("Unexpected end of program".to_string());
-			if *offset >= memory.len() { return eop_err() }
+	fn from_op(op: Op) -> Self {
+		u16::from(&op) as Self
+	}
 
-			macro_rules! parse_pos {
-				( $pos:expr ) => {
-					memory[$pos].parse_into_pos().map_err(|e|
-						format!("Invalid position argument at position {}; source: {e:?}", $pos))?
+	fn from_isize(isize_: isize) -> Self {
+		isize_ as Self
+	}
+
+	fn try_as_op(&self) -> Result<Op, parsing::OpError> {
+		Op::try_from(u16::try_from(*self).map_err(|_| parsing::OpError::Format)?)
+	}
+
+	fn try_as_isize(&self) -> Result<isize, Self::TryAsIsizeError> {
+		isize::try_from(*self)
+	}
+}
+
+use std::ops::{Add, Mul};
+use std::{collections::HashMap, str::FromStr};
+
+pub(crate) trait Program<'a, Num = i64>: AsMut<[Int<'a, Num>]> + Clone
+where Num: Debug + IntNum + 'a, <Num as FromStr>::Err: Debug, Num::TryAsIsizeError: Debug {
+	fn safe_output<'b, In>(
+		&'b mut self,
+		offset: &mut usize,
+		rel_base: &mut usize,
+		mut ext_memory: Option<&mut HashMap<usize, Int<'a, Num>>>,
+		mut input: In
+	) -> Result<Option<Num>, String>
+	where 'a: 'b, In: Iterator<Item = Num> + 'b {
+		use {ArgPos::*, Op::*};
+
+		let memory = self.as_mut();
+
+		macro_rules! check_offset {
+			( + $delta:literal ) => {
+				if *offset + $delta >= memory.len() { return Err("Unexpected end of program".to_string()) }
+			}
+		}
+		check_offset!(+0);
+
+		macro_rules! parse_int {
+			( $int:expr, $try_into:ident, $err_pos:expr ) => {
+				$int.$try_into().map_err(|e|
+					format!("Invalid int at position {}; source: {e:?}", $err_pos))
+			}
+		}
+		macro_rules! parse_memory {
+			( $pos:expr, $try_into:ident ) => {
+				if $pos < memory.len() {
+					parse_int!(&mut memory[$pos], $try_into, $pos)?
+				} else if let Some(ext_memory) = ext_memory.as_mut() {
+					ext_memory.get_mut(&$pos)
+						.map(|i| parse_int!(i, $try_into, $pos))
+						.unwrap_or(Ok(Default::default()))?
+				} else {
+					return Err(format!("Reading outside unextended memory at position {}", $pos));
 				}
 			}
-			macro_rules! parse_memory {
-				( $pos:expr, $par_mode:expr, $parse:ident) => { {
-					use ParMode::*;
-					let pos = match $par_mode { Pos => parse_pos!($pos), Imm => $pos };
-					memory[pos].$parse().map_err(|e|
-						format!("Invalid immediate argument at position {}: {e:?}", $pos))?
-				} }
-			}
-			macro_rules! parse_memory_num { ( $pos:expr, $par_mode:expr) => { parse_memory!($pos, $par_mode, parse_into_num) } }
+		}
+		macro_rules! non_neg_pos { ( $pos:expr ) => { {
+			let pos = $pos;
+			usize::try_from(pos).map_err(|e| format!("Using invalid position {pos} as memory addres; source: {e:?}"))?
+		} } }
+		macro_rules! parse_memory_pos {
+			( $pos:expr ) => { {
+				let pos = non_neg_pos!($pos);
+				let mem_pos = parse_memory!(pos, try_into_isize);
+				non_neg_pos!(mem_pos)
+			} }
+		}
+		macro_rules! parse_rel_memory_pos {
+			( $delta_pos:expr ) => { {
+				let pos = *rel_base as isize + parse_memory!($delta_pos, try_into_isize);
+				non_neg_pos!(pos)
+			} }
+		}
+		macro_rules! parse_memory_with_mode {
+			( $pos:expr, $par_mode:expr, $try_into:ident) => { {
+				use ParMode::*;
+				let pos = match $par_mode {
+					Pos => parse_memory_pos!($pos),
+					Imm => $pos,
+					Rel => parse_rel_memory_pos!($pos),
+				};
+				parse_memory!(pos, $try_into)
+			} }
+		}
+		macro_rules! parse_memory_num_with_mode { ( $pos:expr, $par_mode:expr) =>
+			{ parse_memory_with_mode!($pos, $par_mode, try_into_num) } }
+		macro_rules! write_memory { ( $pos:expr, $val:expr ) => {
+			*if $pos < memory.len() {
+				&mut memory[$pos]
+			} else if let Some(ext_memory) = ext_memory.as_mut() {
+				ext_memory.entry($pos).or_default()
+			} else {
+				return Err(format!("Writing outside unextended memory at position {}", $pos));
+			} = Int::Num($val)
+		} }
 
-			match memory[*offset].parse_into_op().map_err(|e|
-					format!("Unexpected non-op instruction at position {offset}: {e:?}"))? {
-				Halt => return Ok(None),
-				op @ (Add(_) | Mul(_) | Lt(_) | Eq(_)) => {
-					if *offset + 3 >= memory.len() { return eop_err() }
-					let args = {
-						let (Add(pm) | Mul(pm) | Lt(pm) | Eq(pm)) = op else { unreachable!() };
-						[parse_memory_num!(*offset + 1, pm[First]), parse_memory_num!(*offset + 2, pm[Second])]
-					};
-					memory[parse_pos!(*offset + 3)] = Int::Num(match op {
-						Add(_) => args[First] + args[Second],
-						Mul(_) => args[First] * args[Second],
-						Lt(_) => i64::from(args[First] < args[Second]),
-						Eq(_) => i64::from(args[First] == args[Second]),
+		loop {
+			match memory[*offset].try_into_op()
+					.map_err(|e|
+						format!("Unexpected non-op instruction at position {offset}: {e:?}"))? {
+				op @ (Add(par_modes, is_rel_par_mode)
+						| Mul(par_modes, is_rel_par_mode)
+						| Lt(par_modes, is_rel_par_mode)
+						| Eq(par_modes, is_rel_par_mode)) => {
+					check_offset!(+3);
+					let arg0 = parse_memory_num_with_mode!(*offset + 1, par_modes[First]);
+					let arg1 = parse_memory_num_with_mode!(*offset + 2, par_modes[Second]);
+					let dest = if is_rel_par_mode { parse_rel_memory_pos!(*offset + 3) }
+						else { parse_memory_pos!(*offset + 3) };
+					let num = match op {
+						Add(_, _) => arg0 + arg1,
+						Mul(_, _) => arg0 * arg1,
+						Lt(_, _) => Num::from(arg0 < arg1),
+						Eq(_, _) => Num::from(arg0 == arg1),
 						_ => unreachable!(),
-					});
+					};
+					write_memory!(dest, num);
 					*offset += 4;
 				}
-				In => {
-					if *offset + 1 >= memory.len() { return eop_err() }
-					let dest = parse_pos!(*offset + 1);
-					memory[dest] = Int::Num(input.next().ok_or_else(|| "Unexpected end of input".to_string())?);
+				In(is_rel_par_mode) => {
+					check_offset!(+1);
+					let dest = if is_rel_par_mode { parse_rel_memory_pos!(*offset + 1) }
+						else { parse_memory_pos!(*offset + 1) };
+					write_memory!(dest, input.next().ok_or_else(|| "Unexpected end of input".to_string())?);
 					*offset += 2;
 				}
 				Out(par_mode) => {
-					if *offset + 1 >= memory.len() { return eop_err() }
-					let output = parse_memory_num!(*offset + 1, par_mode);
+					check_offset!(+1);
+					let output = parse_memory_num_with_mode!(*offset + 1, par_mode);
 					*offset += 2;
 					return Ok(Some(output))
 				}
 				JumpIf(flag, par_mode) => {
-					if *offset + 2 >= memory.len() { return eop_err() }
-					if (parse_memory_num!(*offset + 1, par_mode[First]) != 0) == flag {
-						*offset = parse_memory!(*offset + 2, par_mode[Second], parse_into_pos);
+					check_offset!(+2);
+					if (parse_memory_num_with_mode!(*offset + 1, par_mode[First]) != Num::default()) == flag {
+						let dest = parse_memory_with_mode!(*offset + 2, par_mode[Second], try_into_isize);
+						*offset = non_neg_pos!(dest);
 					} else {
 						*offset += 3;
 					}
 				}
+				RelAdj(par_mode) => {
+					check_offset!(+1);
+					let delta = parse_memory_with_mode!(*offset + 1, par_mode, try_into_isize);
+					*rel_base = non_neg_pos!(*rel_base as isize + delta);
+					*offset += 2;
+				}
+				Halt => return Ok(None),
 			}
 		}
 	}
 
 	// TODO(bm-w): Return `impl Iterator<…>` once Rust allows it from trait methods
-	fn execute<'b, In>(&'b mut self, mut input: In) -> Box<dyn Iterator<Item = i64> + 'b>
-	where 'a: 'b, In: Iterator<Item = i64> + 'b {
-		let mut offset = 0usize;
+	fn execute_ext<'b, In>(&'b mut self, ext_memory: bool, mut input: In) -> Box<dyn Iterator<Item = Num> + 'b>
+	where 'a: 'b, In: Iterator<Item = Num> + 'b {
+		let mut offset = 0;
+		let mut rel_base = 0;
+		let mut ext_memory = ext_memory.then(HashMap::new);
 		Box::new(std::iter::from_fn(move || {
-			self.safe_output(&mut offset, &mut input).unwrap()
+			self.safe_output(&mut offset, &mut rel_base, ext_memory.as_mut(), &mut input).unwrap()
 		}))
+	}
+
+	// TODO(bm-w): Return `impl Iterator<…>` once Rust allows it from trait methods
+	fn execute<'b, In>(&'b mut self, input: In) -> Box<dyn Iterator<Item = Num> + 'b>
+	where 'a: 'b, In: Iterator<Item = Num> + 'b {
+		self.execute_ext(false, input)
 	}
 }
 
@@ -222,8 +367,8 @@ pub(crate) fn part2() -> i64 {
 
 
 pub(crate) mod parsing {
-	use super::{ParMode, ArgPos, Op, Int, Program};
-	use std::{mem, str::FromStr};
+	use super::{ParMode, ArgPos, PAR_MODE_COEFFS, Op, Int, IntNum, Program};
+	use std::{mem, fmt::Debug, str::FromStr};
 
 	#[derive(Debug)]
 	pub(crate) struct ParModeError(u8);
@@ -233,8 +378,9 @@ pub(crate) mod parsing {
 		fn try_from(value: u8) -> Result<Self, Self::Error> {
 			use ParMode::*;
 			match value {
-				b'0' => Ok(Pos),
-				b'1' => Ok(Imm),
+				0 => Ok(Pos),
+				1 => Ok(Imm),
+				2 => Ok(Rel),
 				b => Err(ParModeError(b))
 			}
 		}
@@ -243,59 +389,69 @@ pub(crate) mod parsing {
 	#[derive(Debug)]
 	pub(crate) enum OpError {
 		Format,
-		Op(u8, Option<u8>),
+		Op(u8),
 		ParMode(Option<ParModeError>, ArgPos),
+	}
+
+	impl TryFrom<u16> for Op {
+		type Error = OpError;
+		fn try_from(value: u16) -> Result<Self, Self::Error> {
+			if value == 99 { return Ok(Op::Halt) }
+
+			fn par_mode(mut value: u16, pos: ArgPos) -> Result<ParMode, OpError> {
+				let coeff = PAR_MODE_COEFFS[pos];
+				if coeff < u16::MAX / 10 { value %= coeff * 10; }
+				value /= coeff;
+				ParMode::try_from(value as u8)
+					.map_err(|e| OpError::ParMode(Some(e), pos))
+			}
+
+			let par_modes = [
+				par_mode(value, ArgPos::First)?,
+				par_mode(value, ArgPos::Second)?,
+			];
+			let third_par_mode = par_mode(value, ArgPos::Third)?;
+
+			fn one_par_mode(par_modes: [ParMode; 2]) -> Result<ParMode, OpError> {
+				match par_modes {
+					[par_mode, ParMode::Pos] => Ok(par_mode),
+					_ => Err(OpError::ParMode(None, ArgPos::Second)),
+				}
+			}
+
+			macro_rules! is_rel_par_mode { ( $pm:expr ) => { matches!($pm, ParMode::Rel) } }
+
+			match value % 100 {
+				1 => Ok(Op::Add(par_modes, is_rel_par_mode!(third_par_mode))),
+				2 => Ok(Op::Mul(par_modes, is_rel_par_mode!(third_par_mode))),
+				3 => match one_par_mode(par_modes)? {
+					ParMode::Imm => Err(OpError::ParMode(None, ArgPos::First)),
+					par_mode => Ok(Op::In(is_rel_par_mode!(par_mode))),
+				}
+				4 => Ok(Op::Out(one_par_mode(par_modes)?)),
+				5 => Ok(Op::JumpIf(true, par_modes)),
+				6 => Ok(Op::JumpIf(false, par_modes)),
+				7 => Ok(Op::Lt(par_modes, is_rel_par_mode!(third_par_mode))),
+				8 => Ok(Op::Eq(par_modes, is_rel_par_mode!(third_par_mode))),
+				9 => Ok(Op::RelAdj(one_par_mode(par_modes)?)),
+				err => Err(OpError::Op(err as u8)),
+			}
+		}
 	}
 
 	impl FromStr for Op {
 		type Err = OpError;
 		fn from_str(s: &str) -> Result<Self, Self::Err> {
-			if s.is_empty() || s.len() > 4 { return Err(OpError::Format) }
-			let mut bytes_rev = s.bytes().rev().fuse();
-			match (bytes_rev.next().unwrap(), bytes_rev.next()) {
-				(b'9', Some(b'9')) if bytes_rev.next().is_none() =>
-					Ok(Op::Halt),
-				(b0, b1 @ (None | Some(b'0'))) => {
-					fn par_mode<I>(bytes: &mut I, pos: ArgPos) -> Result<ParMode, OpError>
-					where I: Iterator<Item = u8> {
-						bytes.next()
-							.map(|b| b.try_into()
-								.map_err(|e| OpError::ParMode(Some(e), pos)))
-							.unwrap_or(Ok(ParMode::Pos))
-					}
-
-					let par_modes = [
-						par_mode(&mut bytes_rev, ArgPos::First)?,
-						par_mode(&mut bytes_rev, ArgPos::Second)?
-					];
-
-					match b0 {
-						b'1' => Ok(Op::Add(par_modes)),
-						b'2' => Ok(Op::Mul(par_modes)),
-						b'3' => match par_modes {
-							[ParMode::Pos, ParMode::Pos] => Ok(Op::In),
-							[ParMode::Imm, _] => Err(OpError::ParMode(None, ArgPos::First)),
-							_ => Err(OpError::ParMode(None, ArgPos::Second)),
-						}
-						b'4' => match par_modes {
-							[par_mode, ParMode::Pos] => Ok(Op::Out(par_mode)),
-							_ => Err(OpError::ParMode(None, ArgPos::Second)),
-						}
-						b'5' => Ok(Op::JumpIf(true, par_modes)),
-						b'6' => Ok(Op::JumpIf(false, par_modes)),
-						b'7' => Ok(Op::Lt(par_modes)),
-						b'8' => Ok(Op::Eq(par_modes)),
-						_ => Err(OpError::Op(b0, b1)),
-					}
-				}
-				(b0, b1) => Err(OpError::Op(b0, b1)),
-			}
+			if s.is_empty() || s.len() > 5 { return Err(OpError::Format) }
+			s.parse::<u16>().map_err(|_| OpError::Format).and_then(Op::try_from)
 		}
 	}
 
-	impl<'a> Program<'a> for Vec<Int<'a>> {}
+	impl<'a, Num> Program<'a, Num> for Vec<Int<'a, Num>>
+	where Num: Debug + IntNum + 'a, <Num as FromStr>::Err: Debug, Num::TryAsIsizeError: Debug {}
 
-	pub(crate) fn from_str<'a>(s: &'a str) -> impl Program<'a> {
+	pub(crate) fn from_str<'a, Num>(s: &'a str) -> impl Program<'a, Num>
+	where Num: Debug + IntNum + 'a, <Num as FromStr>::Err: Debug, Num::TryAsIsizeError: Debug {
 		use itertools::Itertools;
 		s.lines()
 			.enumerate()
@@ -306,8 +462,8 @@ pub(crate) mod parsing {
 					.map(move |int| (l, int)))
 			.scan(0, |c, (l, int)|
 				Some((l, mem::replace(c, *c + int.len() + 1), int)))
-			.map(|(_, c, str)| Int::Raw { _column: c + 1, str })
-			.collect::<Vec<Int<'a>>>()
+			.map(|(_, c, str)| Int::Raw { str, _column: c + 1 })
+			.collect::<Vec<Int<'a, Num>>>()
 	}
 }
 
@@ -334,9 +490,9 @@ mod tests {
 	#[test]
 	fn tests() {
 		use itertools::Itertools as _;
-		let mut tiny_program = parsing::from_str(INPUTS[0]);
-		assert_eq!(tiny_program.execute(&mut std::iter::from_fn(|| panic!())).count(), 0);
-		assert_eq!(tiny_program.as_mut().iter().map(|i| i.as_num().unwrap()).collect::<Vec<_>>(), [1002, 4, 3, 4, 99]);
+		let mut tiny_program = parsing::from_str::<i64>(INPUTS[0]);
+		assert_eq!(tiny_program.execute(&mut std::iter::empty()).count(), 0);
+		assert_eq!(tiny_program.as_mut().iter_mut().map(|i| i.try_into_num().unwrap()).collect::<Vec<_>>(), [1002, 4, 3, 4, 99]);
 		assert_eq!(part1(), 7566643);
 		assert_eq!(parsing::from_str(INPUTS[1]).execute(std::iter::once(8)).exactly_one().ok(), Some(1));
 		assert_eq!(parsing::from_str(INPUTS[1]).execute(std::iter::once(13)).exactly_one().ok(), Some(0));
