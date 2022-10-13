@@ -1,7 +1,7 @@
 // Copyright (c) 2022 Bastiaan Marinus van de Weerd
 
 mod util;
-util::mod_days![01, 02, 03, 04, 05, 06, 07, 08, 09];
+util::mod_days![01, 02, 03, 04, 05, 06, 07, 08, 09, 10];
 
 fn main() {
 	println!("Day 1; part 1: {}, part 2: {}", day01::part1(), day01::part2());
@@ -13,4 +13,5 @@ fn main() {
 	println!("Day 7; part 1: {}, part 2: {}", day07::part1(), day07::part2());
 	println!("Day 8; part 1: {}, part 2:\n{}", day08::part1(), day08::part2());
 	println!("Day 9; part 1: {}, part 2: {}", day09::part1(), day09::part2());
+	println!("Day 10; part 1: {}, part 2: {}", day10::part1(), day10::part2());
 }

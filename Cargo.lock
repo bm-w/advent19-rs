@@ -9,6 +9,7 @@ dependencies = [
  "indoc",
  "itertools",
  "num-bigint",
+ "num-integer",
  "paste",
 ]
 
