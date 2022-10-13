@@ -1,7 +1,7 @@
 // Copyright (c) 2022 Bastiaan Marinus van de Weerd
 
-//! NOTE: The “Intcode computer” of this module is also used in `day07`
-//! and `day09`; for that reason:
+//! NOTE: The “Intcode computer” of this module is also used in `day07`,
+//! `day09`, and `day11`; for that reason:
 //! - various items are `pub(crate)`;
 //! - various items implement `Clone`;
 //! - `Program` was refactored into to expose the `safe_output` method;
