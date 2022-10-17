@@ -103,6 +103,8 @@ impl From<&Op> for u16 {
 	}
 }
 
+use std::{ops::{Add, Mul}, str::FromStr};
+
 pub(crate) trait IntNum: Clone + Default + FromStr + From<bool>
 	+ PartialEq<Self> + PartialOrd<Self>
 	+ Add<Self, Output = Self> + Mul<Self, Output = Self> {
@@ -184,22 +186,32 @@ impl IntNum for i64 {
 	}
 }
 
-use std::ops::{Add, Mul};
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
+
+pub(crate) struct ProgramState<'a, Num> {
+	pub(crate) offset: usize,
+	pub(crate) rel_base: usize,
+	pub(crate) ext_memory: Option<HashMap<usize, Int<'a, Num>>>,
+}
+
+impl<'a, Num> ProgramState<'a, Num> {
+	pub(crate) fn new(ext_memory: bool) -> Self {
+		Self { offset: 0, rel_base: 0, ext_memory: ext_memory.then(HashMap::new) }
+	}
+}
 
 pub(crate) trait Program<'a, Num = i64>: AsMut<[Int<'a, Num>]> + Clone
 where Num: Debug + IntNum + 'a, <Num as FromStr>::Err: Debug, Num::TryAsIsizeError: Debug {
 	fn safe_output<'b, In>(
 		&'b mut self,
-		offset: &mut usize,
-		rel_base: &mut usize,
-		mut ext_memory: Option<&mut HashMap<usize, Int<'a, Num>>>,
+		ProgramState { offset, rel_base, ext_memory }: &mut ProgramState<'a, Num>,
 		mut input: In
 	) -> Result<Option<Num>, String>
 	where 'a: 'b, In: Iterator<Item = Num> + 'b {
 		use {ArgPos::*, Op::*};
 
 		let memory = self.as_mut();
+		let mut ext_memory = ext_memory.as_mut();
 
 		macro_rules! check_offset {
 			( + $delta:literal ) => {
@@ -326,11 +338,9 @@ where Num: Debug + IntNum + 'a, <Num as FromStr>::Err: Debug, Num::TryAsIsizeErr
 	// TODO(bm-w): Return `impl Iterator<…>` once Rust allows it from trait methods
 	fn execute_ext<'b, In>(&'b mut self, ext_memory: bool, mut input: In) -> Box<dyn Iterator<Item = Num> + 'b>
 	where 'a: 'b, In: Iterator<Item = Num> + 'b {
-		let mut offset = 0;
-		let mut rel_base = 0;
-		let mut ext_memory = ext_memory.then(HashMap::new);
+		let mut state = ProgramState::new(ext_memory);
 		Box::new(std::iter::from_fn(move || {
-			self.safe_output(&mut offset, &mut rel_base, ext_memory.as_mut(), &mut input).unwrap()
+			self.safe_output(&mut state, &mut input).unwrap()
 		}))
 	}
 

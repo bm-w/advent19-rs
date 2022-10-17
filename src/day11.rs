@@ -1,7 +1,7 @@
 // Copyright (c) 2022 Bastiaan Marinus van de Weerd
 
 use std::collections::HashMap;
-use crate::day05::{parsing::from_str as input_program_from_str, Program as _};
+use crate::day05::{parsing::from_str as input_program_from_str, ProgramState, Program as _};
 
 
 type PaintedWhite = HashMap<[isize; 2], bool>;
@@ -40,15 +40,13 @@ pub(crate) fn part1and2_impl(starting_white: bool) -> PaintedWhite {
 	let mut robot_dir = Dir::Up;
 
 	let mut program = input_program_from_str::<i64>(include_str!("day11.txt"));
-	let mut offset = 0;
-	let mut rel_base = 0;
-	let mut ext_memory = HashMap::new();
+	let mut program_state = ProgramState::new(true);
 
 	loop {
 		let mut input = once(i64::from(*painted_white.get(&robot_pos).unwrap_or(&false)));
 		let program = &mut program;
 		let mut outputs = from_fn(||
-			program.safe_output(&mut offset, &mut rel_base, Some(&mut ext_memory), &mut input)
+			program.safe_output(&mut program_state, &mut input)
 				.map(|o| o.map(Ok))
 				.unwrap_or_else(|e| Some(Err(e))))
 			.take(2);

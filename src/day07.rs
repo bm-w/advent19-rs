@@ -1,6 +1,6 @@
 // Copyright (c) 2022 Bastiaan Marinus van de Weerd
 
-use crate::day05::{self, parsing::from_str as input_program_from_str};
+use crate::day05::{self, parsing::from_str as input_program_from_str, ProgramState};
 
 
 fn part1_impl<'a>(input_program: impl day05::Program<'a>) -> i64 {
@@ -31,27 +31,27 @@ pub(crate) fn part1() -> i64 {
 /// combinations are given; trying some other combinations with those test programs
 /// results in infinite loops.
 fn part2_impl<'a>(input_program: impl day05::Program<'a>, phase_settings: Option<[i64; 5]>) -> i64 {
-	use {std::iter, itertools::{Either, Itertools as _}};
+	use std::{array::from_fn as array_from_fn, iter::once as iter_once};
+	use itertools::{Either, Itertools as _};
 
 	let mut input_programs = vec![input_program; 5];
 	let mut highest_output = i64::MIN;
 
 	let phase_settings = if let Some(phase_settings) = phase_settings {
-		Either::Left(iter::once(Vec::from(phase_settings)))
+		Either::Left(iter_once(Vec::from(phase_settings)))
 	} else {
 		Either::Right((5i64..=9).permutations(5))
 	};
 
 	'phase_settings: for phase_settings in phase_settings {
-		let mut offsets = [0; 5];
-		let mut rel_base = 0; // NOTE: Added for `day09`, but not actually used/modified here
+		let mut program_states = array_from_fn::<_, 5, _>(|_| ProgramState::new(false));
 		let mut phase_settings_ = phase_settings.into_iter().map(Some).collect::<Vec<_>>();
 		let mut input = Some(0);
 		let mut final_output = None;
 		'feedback: loop {
-			for ((program, offset), phase_setting)
-					in input_programs.iter_mut().zip(offsets.iter_mut()).zip(phase_settings_.iter_mut()) {
-				match program.safe_output(offset, &mut rel_base, None,
+			for ((program, program_state), phase_setting)
+					in input_programs.iter_mut().zip(program_states.iter_mut()).zip(phase_settings_.iter_mut()) {
+				match program.safe_output(program_state,
 						&mut phase_setting.take().into_iter().chain(input.into_iter())) {
 					Ok(None) => break 'feedback,
 					Ok(Some(output)) => input = Some(output),
