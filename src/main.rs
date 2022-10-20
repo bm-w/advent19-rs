@@ -14,7 +14,7 @@ fn main() {
 	println!("Day 8; part 1: {}, part 2:\n{}", day08::part1(), day08::part2());
 	println!("Day 9; part 1: {}, part 2: {}", day09::part1(), day09::part2());
 	println!("Day 10; part 1: {}, part 2: {}", day10::part1(), day10::part2());
-	println!("Day 11; part 1: {}, part 2: {}", day11::part1(), day11::part2());
+	println!("Day 11; part 1: {}, part 2:\n{}", day11::part1(), day11::part2());
 	println!("Day 12; part 1: {}, part 2: {}", day12::part1(), day12::part2());
 	println!("Day 13; part 1: {}, part 2: {}", day13::part1(), day13::part2());
 	println!("Day 14; part 1: {}, part 2: {}", day14::part1(), day14::part2());
