@@ -91,7 +91,7 @@ fn part2_impl<const N: usize>(input_map: Map) -> usize {
 			let mag = dot(v, v).sqrt();
 			[v[0] / mag, v[1] / mag]
 		};
-		let laser_ortho = [-laser_norm[1] as f32, laser_norm[0] as f32];
+		let laser_ortho = [-laser_norm[1], laser_norm[0]];
 		let (next_hit, pos, _, _) = input_map.asteroids.iter()
 			.enumerate()
 			.filter_map(|(i, &contains_asteroid)| {

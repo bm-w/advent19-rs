@@ -35,13 +35,13 @@ impl Axis {
 impl<T> std::ops::Index<Axis> for [T] {
 	type Output = T;
 	fn index(&self, axis: Axis) -> &Self::Output {
-		&self[axis.as_usize() as usize]
+		&self[axis.as_usize()]
 	}
 }
 
 impl<T> std::ops::IndexMut<Axis> for [T] {
 	fn index_mut(&mut self, axis: Axis) -> &mut Self::Output {
-		&mut self[axis.as_usize() as usize]
+		&mut self[axis.as_usize()]
 	}
 }
 
