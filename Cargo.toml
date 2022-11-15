@@ -4,12 +4,10 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
+indoc = "1.0.4"
 itertools = "0.10.5"
 num-bigint = "0.4.3"
 num-integer = "0.1.45"
 paste = "1.0.7"
-
-[dev-dependencies]
-indoc = "1.0.4"
 
 [features]
