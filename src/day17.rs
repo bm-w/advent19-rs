@@ -9,7 +9,7 @@ trait Cameras<'a>: Program<'a, i64> {
 
 		let mut program_state = ProgramState::new(true);
 
-		let output = from_fn(|| self.safe_output(&mut program_state, empty()).transpose());
+		let output = from_fn(|| self.try_output(&mut program_state, empty()).transpose());
 
 		let mut width = 0;
 		let mut height = None;

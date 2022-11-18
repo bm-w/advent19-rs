@@ -51,7 +51,7 @@ fn part2_impl<'a>(input_program: impl day05::Program<'a>, phase_settings: Option
 		'feedback: loop {
 			for ((program, program_state), phase_setting)
 					in input_programs.iter_mut().zip(program_states.iter_mut()).zip(phase_settings_.iter_mut()) {
-				match program.safe_output(program_state,
+				match program.try_output(program_state,
 						&mut phase_setting.take().into_iter().chain(input.into_iter())) {
 					Ok(None) => break 'feedback,
 					Ok(Some(output)) => input = Some(output),

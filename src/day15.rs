@@ -156,7 +156,7 @@ impl RepairDroid {
 	) -> ([isize; 2], Tile) {
 		use std::iter::once;
 		let target = r#move.pos_from(&self.0);
-		let tile = match program.safe_output(program_state, once(r#move.into())) {
+		let tile = match program.try_output(program_state, once(r#move.into())) {
 			Ok(Some(0)) => return (target, Tile::Wall),
 			Ok(Some(1)) => Tile::Empty,
 			Ok(Some(2)) => Tile::System,

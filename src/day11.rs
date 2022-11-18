@@ -46,7 +46,7 @@ pub(crate) fn part1and2_impl(starting_white: bool) -> PaintedWhite {
 		let mut input = once(i64::from(*painted_white.get(&robot_pos).unwrap_or(&false)));
 		let program = &mut program;
 		let mut outputs = from_fn(||
-			program.safe_output(&mut program_state, &mut input)
+			program.try_output(&mut program_state, &mut input)
 				.map(|o| o.map(Ok))
 				.unwrap_or_else(|e| Some(Err(e))))
 			.take(2);

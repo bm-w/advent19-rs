@@ -13,7 +13,7 @@ trait DroneProgram<'a>: Program<'a, i64> {
 			format!("Expected exactly one output, got {}", got.as_ref())
 		}
 
-		let pulled = match program.safe_output(&mut program_state, input)? {
+		let pulled = match program.try_output(&mut program_state, input)? {
 			Some(0) => false,
 			Some(1) => true,
 			Some(invalid) => return Err(format!("Expected output 0 or 1, got {invalid}")),
@@ -22,7 +22,7 @@ trait DroneProgram<'a>: Program<'a, i64> {
 
 		let mut took_more_input = false;
 		let input = std::iter::from_fn(|| { took_more_input = true; None });
-		if let Some(output) = program.safe_output(&mut program_state, input)? {
+		if let Some(output) = program.try_output(&mut program_state, input)? {
 			return Err(exactly_one_err(format!("two ({} and {output})",
 				if pulled { '1' } else { '0' })))
 		}

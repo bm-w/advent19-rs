@@ -1,8 +1,8 @@
 // Copyright (c) 2022 Bastiaan Marinus van de Weerd
 
 //! NOTE: The “Intcode computer” of this module is also used in `day07`,
-//! `day09`, `day11`, `day13`, `day15`, `day17`, `day19`, and `day21`;
-//! for that reason:
+//! `day09`, `day11`, `day13`, `day15`, `day17`, `day19`, `day21`, and
+//! `day23`; for that reason:
 //! - various items are `pub(crate)`;
 //! - various items implement `Clone`;
 //! - `Program` was refactored into to expose the `safe_output` method;
@@ -201,14 +201,15 @@ impl<'a, Num> ProgramState<'a, Num> {
 	}
 }
 
-pub(crate) trait Program<'a, Num = i64>: AsMut<[Int<'a, Num>]> + Clone
+pub(crate) trait Program<'a, Num = i64>: AsRef<[Int<'a, Num>]> + AsMut<[Int<'a, Num>]> + Clone
 where Num: Debug + IntNum + 'a, <Num as FromStr>::Err: Debug, Num::TryAsIsizeError: Debug {
-	fn safe_output<'b, In>(
+
+	fn try_step<'b, FIn>(
 		&'b mut self,
 		ProgramState { offset, rel_base, ext_memory }: &mut ProgramState<'a, Num>,
-		mut input: In
+		input: FIn
 	) -> Result<Option<Num>, String>
-	where 'a: 'b, In: Iterator<Item = Num> + 'b {
+	where 'a: 'b, FIn: FnOnce() -> Option<Num> {
 		use {ArgPos::*, Op::*};
 
 		let memory = self.as_mut();
@@ -280,58 +281,77 @@ where Num: Debug + IntNum + 'a, <Num as FromStr>::Err: Debug, Num::TryAsIsizeErr
 			} = Int::Num($val)
 		} }
 
+		match memory[*offset].try_into_op()
+				.map_err(|e|
+					format!("Unexpected non-op instruction at position {offset}: {e:?}"))? {
+			op @ (Add(par_modes, is_rel_par_mode)
+					| Mul(par_modes, is_rel_par_mode)
+					| Lt(par_modes, is_rel_par_mode)
+					| Eq(par_modes, is_rel_par_mode)) => {
+				check_offset!(+3);
+				let arg0 = parse_memory_num_with_mode!(*offset + 1, par_modes[First]);
+				let arg1 = parse_memory_num_with_mode!(*offset + 2, par_modes[Second]);
+				let dest = if is_rel_par_mode { parse_rel_memory_pos!(*offset + 3) }
+					else { parse_memory_pos!(*offset + 3) };
+				let num = match op {
+					Add(_, _) => arg0 + arg1,
+					Mul(_, _) => arg0 * arg1,
+					Lt(_, _) => Num::from(arg0 < arg1),
+					Eq(_, _) => Num::from(arg0 == arg1),
+					_ => unreachable!(),
+				};
+				write_memory!(dest, num);
+				*offset += 4;
+			}
+			In(is_rel_par_mode) => {
+				check_offset!(+1);
+				let dest = if is_rel_par_mode { parse_rel_memory_pos!(*offset + 1) }
+					else { parse_memory_pos!(*offset + 1) };
+				write_memory!(dest, input().ok_or_else(|| "Unexpected end of input".to_string())?);
+				*offset += 2;
+			}
+			Out(par_mode) => {
+				check_offset!(+1);
+				let output = parse_memory_num_with_mode!(*offset + 1, par_mode);
+				*offset += 2;
+				return Ok(Some(output))
+			}
+			JumpIf(flag, par_mode) => {
+				check_offset!(+2);
+				if (parse_memory_num_with_mode!(*offset + 1, par_mode[First]) != Num::default()) == flag {
+					let dest = parse_memory_with_mode!(*offset + 2, par_mode[Second], try_into_isize);
+					*offset = non_neg_pos!(dest);
+				} else {
+					*offset += 3;
+				}
+			}
+			RelAdj(par_mode) => {
+				check_offset!(+1);
+				let delta = parse_memory_with_mode!(*offset + 1, par_mode, try_into_isize);
+				*rel_base = non_neg_pos!(*rel_base as isize + delta);
+				*offset += 2;
+			}
+			Halt => (),
+		}
+
+		Ok(None)
+	}
+
+	fn is_halted(&self, state: &ProgramState<'a, Num>) -> bool {
+		matches!(self.as_ref()[state.offset], Int::Op(Op::Halt))
+	}
+
+	fn try_output<'b, In>(
+		&'b mut self,
+		state: &mut ProgramState<'a, Num>,
+		mut input: In
+	) -> Result<Option<Num>, String>
+	where 'a: 'b, In: Iterator<Item = Num> + 'b {
 		loop {
-			match memory[*offset].try_into_op()
-					.map_err(|e|
-						format!("Unexpected non-op instruction at position {offset}: {e:?}"))? {
-				op @ (Add(par_modes, is_rel_par_mode)
-						| Mul(par_modes, is_rel_par_mode)
-						| Lt(par_modes, is_rel_par_mode)
-						| Eq(par_modes, is_rel_par_mode)) => {
-					check_offset!(+3);
-					let arg0 = parse_memory_num_with_mode!(*offset + 1, par_modes[First]);
-					let arg1 = parse_memory_num_with_mode!(*offset + 2, par_modes[Second]);
-					let dest = if is_rel_par_mode { parse_rel_memory_pos!(*offset + 3) }
-						else { parse_memory_pos!(*offset + 3) };
-					let num = match op {
-						Add(_, _) => arg0 + arg1,
-						Mul(_, _) => arg0 * arg1,
-						Lt(_, _) => Num::from(arg0 < arg1),
-						Eq(_, _) => Num::from(arg0 == arg1),
-						_ => unreachable!(),
-					};
-					write_memory!(dest, num);
-					*offset += 4;
-				}
-				In(is_rel_par_mode) => {
-					check_offset!(+1);
-					let dest = if is_rel_par_mode { parse_rel_memory_pos!(*offset + 1) }
-						else { parse_memory_pos!(*offset + 1) };
-					write_memory!(dest, input.next().ok_or_else(|| "Unexpected end of input".to_string())?);
-					*offset += 2;
-				}
-				Out(par_mode) => {
-					check_offset!(+1);
-					let output = parse_memory_num_with_mode!(*offset + 1, par_mode);
-					*offset += 2;
-					return Ok(Some(output))
-				}
-				JumpIf(flag, par_mode) => {
-					check_offset!(+2);
-					if (parse_memory_num_with_mode!(*offset + 1, par_mode[First]) != Num::default()) == flag {
-						let dest = parse_memory_with_mode!(*offset + 2, par_mode[Second], try_into_isize);
-						*offset = non_neg_pos!(dest);
-					} else {
-						*offset += 3;
-					}
-				}
-				RelAdj(par_mode) => {
-					check_offset!(+1);
-					let delta = parse_memory_with_mode!(*offset + 1, par_mode, try_into_isize);
-					*rel_base = non_neg_pos!(*rel_base as isize + delta);
-					*offset += 2;
-				}
-				Halt => return Ok(None),
+			if let Some(output) = self.try_step(state, || input.next())? {
+				return Ok(Some(output))
+			} else if self.is_halted(state) {
+				return Ok(None)
 			}
 		}
 	}
@@ -341,7 +361,7 @@ where Num: Debug + IntNum + 'a, <Num as FromStr>::Err: Debug, Num::TryAsIsizeErr
 	where 'a: 'b, In: Iterator<Item = Num> + 'b {
 		let mut state = ProgramState::new(ext_memory);
 		Box::new(std::iter::from_fn(move || {
-			self.safe_output(&mut state, &mut input).unwrap()
+			self.try_output(&mut state, &mut input).unwrap()
 		}))
 	}
 

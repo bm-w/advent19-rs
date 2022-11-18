@@ -36,7 +36,7 @@ trait Program: day05::Program<'static, i64> {
 		let mut dbg_output = Vec::new();
 
 		macro_rules! safe_output {
-			( $input:expr ) => { match self.safe_output(&mut state, $input) {
+			( $input:expr ) => { match self.try_output(&mut state, $input) {
 				Ok(Some(num)) => { #[cfg(test)] dbg_output.push(num); num },
 				Ok(None) => return Err(ProgramExecutionError::UnexpectedEnd),
 				Err(err) => return Err(ProgramExecutionError::Internal(err)),
@@ -86,7 +86,7 @@ trait Program: day05::Program<'static, i64> {
 			if safe_output!() != b as i64 { invalid_output!('E') }
 		}
 
-		let render = from_fn(|| self.safe_output(&mut state, empty()).transpose())
+		let render = from_fn(|| self.try_output(&mut state, empty()).transpose())
 			.map(|n| n.map(|n| (n as u8) as char))
 			.collect::<Result<String, _>>()
 			.map_err(ProgramExecutionError::Internal)?;
