@@ -71,7 +71,7 @@ mod vault {
 	impl<const NUM_COLLECTORS: usize, C: Collectors<NUM_COLLECTORS>> std::fmt::Display for Grid<C, NUM_COLLECTORS> {
 		fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 			use std::fmt::Write;
-	
+
 			let height = self.spaces.len() / self.width;
 			for y in 0..height {
 				for x in 0..self.width {
@@ -246,13 +246,13 @@ mod vault {
 				node: usize,
 				cost: usize,
 			}
-	
+
 			impl PartialOrd for State {
 				fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
 					Some(self.cmp(other))
 				}
 			}
-	
+
 			impl Ord for State {
 				fn cmp(&self, other: &Self) -> std::cmp::Ordering {
 					self.cost.cmp(&other.cost).reverse().then_with(|| self.node.cmp(&other.node))

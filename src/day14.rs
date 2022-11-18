@@ -36,7 +36,7 @@ impl<'a> Nanofactory<'a> {
 		if quantity == 0 { return 0 }
 
 		let mut leftovers = HashMap::new();
-	
+
 		let mut queue = VecDeque::new();
 		let mut ore_req = 0;
 		queue.push_back((quantity, FUEL));

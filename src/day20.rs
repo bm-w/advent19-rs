@@ -86,11 +86,11 @@ mod maze {
 
 			let mut queue = VecDeque::new();
 			let mut costs = HashMap::new();
-		
+
 			queue.push_front((Pos { grid: self.start, level: 0 }, 0));
-		
+
 			while let Some((from_pos, cost)) = queue.pop_front() {
-		
+
 				if from_pos.grid == self.finish && (!recurse || from_pos.level == 0) {
 					return cost
 				}
@@ -103,15 +103,15 @@ mod maze {
 						*entry.get_mut() = cost;
 					}
 				}
-		
+
 				#[cfg(LOGGING)]
 				fn pos_to_xy(pos: usize, w: usize) -> [usize; 2] {
 					[pos % w, pos / w]
 				}
-		
+
 				#[cfg(LOGGING)]
 				println!("{:?}@{}: {cost}", pos_to_xy(from_pos.grid, self.width), from_pos.level);
-		
+
 				for to_pos in self.reachable_positions(from_pos, recurse) {
 					#[cfg(LOGGING)]
 					println!("{:?}@{} -> {:?}@{}{}",
@@ -131,7 +131,7 @@ mod maze {
 					queue.push_back((to_pos, cost + 1))
 				}
 			}
-		
+
 			panic!("Unable to find path from start to finish")
 
 		}
@@ -248,7 +248,7 @@ mod parsing {
 			}
 
 			fn portal_id(b0: u8, b1: u8) -> u16 {
-				let [low, high] = if b0 < b1 { [b0, b1] } else { [b1, b0] }; 
+				let [low, high] = if b0 < b1 { [b0, b1] } else { [b1, b0] };
 				high as u16 + ((low as u16) << 8)
 			}
 
@@ -301,7 +301,7 @@ mod parsing {
 							Ii { .. } => (),
 							Iii { tl, .. } | Iv { tl, .. } | V { tl, .. } if c < tl + 2 => (),
 							Iii { w, tl, .. } => geometry = Iv { w, tl, tr: w - c + 2 },
-							Iv { w, tl, tr } => 
+							Iv { w, tl, tr } =>
 								if c == tl + 2 { geometry = V { w, tl } }
 								else if c < w - tr + 2 { ret_space_err!() }
 							V { .. } => (),

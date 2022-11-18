@@ -50,7 +50,7 @@ pub(crate) fn part1and2_impl(starting_white: bool) -> PaintedWhite {
 				.map(|o| o.map(Ok))
 				.unwrap_or_else(|e| Some(Err(e))))
 			.take(2);
-		
+
 		let outputs = match (outputs.next(), outputs.next()) {
 			(Some(Ok(o0)), Some(Ok(o1))) => [o0, o1],
 			(Some(Err(e)), _) | (_, Some(Err(e))) => panic!("{}", e),
@@ -74,7 +74,7 @@ pub(crate) fn part1and2_impl(starting_white: bool) -> PaintedWhite {
 		robot_dir.r#move(&mut robot_pos);
 	}
 
-	
+
 	painted_white
 }
 

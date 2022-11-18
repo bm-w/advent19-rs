@@ -310,7 +310,7 @@ pub(crate) fn part2() -> usize {
 		system_pos,
 		..
 	} = part1and2_prelude(false);
-	
+
 	let mut recently_filled = HashSet::new();
 	assert!(recently_filled.insert(system_pos));
 	for i in 0.. {

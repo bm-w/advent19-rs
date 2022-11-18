@@ -200,7 +200,7 @@ trait Game<'a>: Program<'a, i64> {
 					}
 					dbg_i += 1;
 				}
-				
+
 				let [paddle_pos, ball_pos] = game_state.paddle_and_ball();
 
 				let Some(last_ball_x) = prev_ball_x.replace(ball_pos[0]) else { return Input::Neutral };

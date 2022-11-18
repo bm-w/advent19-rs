@@ -27,20 +27,20 @@ trait Program: AsMut<[Int]> {
 			if offset >= memory.len() { panic!("TODO") }
 			let int = &memory[offset];
 			if matches!(int, &Int::Op(Opcode::Halt)) { break }
-	
+
 			if offset + 3 >= memory.len() { panic!("TODO") }
 			let arg_poss = (memory[offset + 1].pos(), memory[offset + 2].pos());
 			let out_pos = memory[offset + 3].pos();
-	
+
 			if arg_poss.0.max(arg_poss.1).max(out_pos) >= memory.len() { panic!("TODO") }
 			let args = (memory[arg_poss.0].num(), memory[arg_poss.1].num());
-	
+
 			memory[out_pos] = match int {
 				Int::Op(Opcode::Add) => args.0 + args.1,
 				Int::Op(Opcode::Mul) => args.0 * args.1,
 				_ => panic!(),
 			}.into();
-	
+
 			offset += 4;
 		}
 	}

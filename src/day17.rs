@@ -142,7 +142,7 @@ pub(crate) fn part2() -> impl std::fmt::Display {
 			d if d > s => s,
 			_ => 1,
 		};
-		let n = d / s; 
+		let n = d / s;
 		(n * s == d).then_some((s, n as usize))
 	}
 
@@ -153,7 +153,7 @@ pub(crate) fn part2() -> impl std::fmt::Display {
 			let i = i % (2 * 26);
 			let b = if i < 26 { b'a' } else { b'A' };
 			dbg_view[pos] = b + (i as u8 % 26);
-			
+
 		}
 		for &[from, to] in &dbg_edges {
 			let (s, _) = edge_steps([from, to], width).unwrap();
@@ -283,10 +283,10 @@ pub(crate) fn part2() -> impl std::fmt::Display {
 		for subcommand in subcommands {
 			command.push_str(subcommand);
 			command.push('\n');
-		} 
+		}
 		command.push('n'); // No live video; push `'y'` otherwise
 		command.push('\n');
-		
+
 		Some(command)
 	}
 

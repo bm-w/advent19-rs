@@ -97,7 +97,7 @@ mod parsing {
 
 	#[derive(Debug)]
 	#[allow(dead_code)]
-	pub(super) enum MapError<'a> { 
+	pub(super) enum MapError<'a> {
 		Empty,
 		Entry { line: usize, source: MapEntryError<'a> },
 		Duplicate { line: usize, orbiter: &'a str },

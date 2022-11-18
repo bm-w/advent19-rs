@@ -63,7 +63,7 @@ impl<'a, N: Nic<'a, i64>> Computer<N, NicState<'a, i64>> {
 			return Err(format!("Unexpectedly returned output {output}"))
 		}
 		Ok(())
-	} 
+	}
 
 	fn try_nic_step(&mut self) -> Result<Option<PackageOut>, String> {
 
