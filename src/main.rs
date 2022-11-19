@@ -4,7 +4,7 @@ mod util;
 util::mod_days![
 	01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
 	11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-	21, 22, 23];
+	21, 22, 23, 24];
 
 fn main() {
 	println!("Day 1; part 1: {}, part 2: {}", day01::part1(), day01::part2());
@@ -30,4 +30,5 @@ fn main() {
 	println!("Day 21; part 1: {}, part 2: {}", day21::part1(), day21::part2());
 	println!("Day 22; part 1: {}, part 2: {}", day22::part1(), day22::part2());
 	println!("Day 23; part 1: {}, part 2: {}", day23::part1(), day23::part2());
+	println!("Day 24; part 1: {}, part 2: {}", day24::part1(), day24::part2());
 }
