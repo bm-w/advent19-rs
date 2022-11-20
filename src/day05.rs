@@ -1,11 +1,12 @@
 // Copyright (c) 2022 Bastiaan Marinus van de Weerd
 
 //! NOTE: The “Intcode computer” of this module is also used in `day07`,
-//! `day09`, `day11`, `day13`, `day15`, `day17`, `day19`, `day21`, and
-//! `day23`; for that reason:
+//! `day09`, `day11`, `day13`, `day15`, `day17`, `day19`, `day21`, `day23`,
+//! and `day25`; for that reason:
 //! - various items are `pub(crate)`;
 //! - various items implement `Clone`;
-//! - `Program` was refactored into to expose the `safe_output` method;
+//! - `Program` was refactored into to expose the `try_step`
+//!   & `try_output` methods;
 //! - relative (`Rel`) parameter mode;
 //! - extended memory beyond the base program;
 //! - generic `Num` support.
@@ -339,6 +340,10 @@ where Num: Debug + IntNum + 'a, <Num as FromStr>::Err: Debug, Num::TryAsIsizeErr
 
 	fn is_halted(&self, state: &ProgramState<'a, Num>) -> bool {
 		matches!(self.as_ref()[state.offset], Int::Op(Op::Halt))
+	}
+
+	fn needs_input(&self, state: &ProgramState<'a, Num>) -> bool {
+		matches!(self.as_ref()[state.offset], Int::Op(Op::In(_)))
 	}
 
 	fn try_output<'b, In>(
